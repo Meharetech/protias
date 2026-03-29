@@ -10,9 +10,30 @@ dotenv.config();
 // Connect to MongoDB
 connectDB();
 
-// Initialize Firebase for push notifications
 const { initializeFirebase } = require('./services/notificationService');
+const fs = require('fs');
+
+// Initialize Firebase for push notifications
 initializeFirebase();
+
+// Ensure upload directories exist
+const uploadDirs = [
+    'uploads',
+    'uploads/courses',
+    'uploads/payments',
+    'uploads/sliders',
+    'uploads/materials',
+    'uploads/notices',
+    'uploads/categories'
+];
+
+uploadDirs.forEach(dir => {
+    const fullPath = path.join(__dirname, dir);
+    if (!fs.existsSync(fullPath)) {
+        fs.mkdirSync(fullPath, { recursive: true });
+        console.log(`✅ Created directory: ${dir}`);
+    }
+});
 
 const app = express();
 
