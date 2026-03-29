@@ -691,6 +691,7 @@ exports.getMe = async (req, res) => {
                 email: user.email,
                 phone: user.phone,
                 role: user.role,
+                profilePic: user.profilePic,
                 lastLogin: user.lastLogin,
                 createdAt: user.createdAt
             }
@@ -700,6 +701,55 @@ exports.getMe = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Server error'
+        });
+    }
+};
+
+// @desc    Update profile picture
+// @route   PUT /api/auth/profile-pic
+// @access  Private
+exports.updateProfilePic = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please upload an image'
+            });
+        }
+
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Delete old profile pic if exists
+        if (user.profilePic && !user.profilePic.startsWith('http')) {
+            const oldPath = path.join(__dirname, '..', user.profilePic);
+            if (fs.existsSync(oldPath)) {
+                fs.unlinkSync(oldPath);
+            }
+        }
+
+        // Save new path
+        user.profilePic = req.file.path.replace(/\\/g, '/');
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Profile picture updated successfully',
+            data: {
+                profilePic: user.profilePic
+            }
+        });
+    } catch (error) {
+        console.error('Update profile pic error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update profile picture',
+            error: error.message
         });
     }
 };

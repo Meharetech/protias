@@ -24,7 +24,8 @@ const uploadDirs = [
     'uploads/sliders',
     'uploads/materials',
     'uploads/notices',
-    'uploads/categories'
+    'uploads/categories',
+    'uploads/profiles'
 ];
 
 uploadDirs.forEach(dir => {
@@ -45,8 +46,8 @@ app.use(cors({
     credentials: true
 }));
 // Standard payload size limit (Multipart handles large files)
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
 // Serve static files (uploaded course materials)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

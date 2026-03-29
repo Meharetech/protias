@@ -11,9 +11,11 @@ const {
     forgotPassword,
     verifyResetOTP,
     resetPassword,
-    updateDeviceInfo
+    updateDeviceInfo,
+    updateProfilePic
 } = require('../controllers/authController');
-const { protect } = require('../middlewares/auth');
+const { protect } = require('../middleware/auth');
+const upload = require('../middleware/fileUpload');
 
 // Public routes - Registration with OTP
 router.post('/send-registration-otp', sendRegistrationOTP);
@@ -33,6 +35,7 @@ router.post('/reset-password', resetPassword);
 // Protected routes
 router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
+router.put('/profile-pic', protect, upload.single('profilePic'), updateProfilePic);
 router.put('/device-info', protect, updateDeviceInfo);
 router.post('/logout', protect, logout);
 
