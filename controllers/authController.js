@@ -221,14 +221,7 @@ exports.verifyRegistrationOTP = async (req, res) => {
                 success: true,
                 message: 'Registration successful',
                 data: {
-                    user: {
-                        id: newUser._id,
-                        fullName: newUser.fullName,
-                        email: newUser.email,
-                        phone: newUser.phone,
-                        role: newUser.role,
-                        referralCode: newUser.referralCode
-                    },
+                    user: newUser.toJSON(),
                     token
                 }
             };
@@ -458,14 +451,7 @@ exports.login = async (req, res) => {
             success: true,
             message: 'Login successful',
             data: {
-                user: {
-                    id: user._id,
-                    fullName: user.fullName,
-                    email: user.email,
-                    phone: user.phone,
-                    role: user.role,
-                    lastLogin: user.lastLogin
-                },
+                user: user.toJSON(),
                 token
             }
         });
@@ -709,16 +695,7 @@ exports.getMe = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            data: {
-                id: user._id,
-                fullName: user.fullName,
-                email: user.email,
-                phone: user.phone,
-                role: user.role,
-                profilePic: user.profilePic,
-                lastLogin: user.lastLogin,
-                createdAt: user.createdAt
-            }
+            data: user.toJSON()
         });
     } catch (error) {
         console.error('Get profile error:', error);

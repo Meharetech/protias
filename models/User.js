@@ -70,7 +70,7 @@ const userSchema = new mongoose.Schema({
     profilePic: {
         type: String,
         trim: true,
-        default: ''
+        default: null
     },
     deviceId: {
         type: String,
