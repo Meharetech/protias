@@ -5,7 +5,8 @@ const {
     getUserById,
     updateUser,
     deleteUser,
-    getUserStats
+    getUserStats,
+    resetDeviceId
 } = require('../controllers/userController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -20,6 +21,7 @@ router.get('/stats', getUserStats);
 router.get('/', getAllUsers);
 router.get('/:id', getUserById);
 router.put('/:id', updateUser);
+router.put('/:id/reset-device', resetDeviceId);
 router.delete('/:id', deleteUser);
 
 module.exports = router;

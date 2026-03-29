@@ -72,6 +72,11 @@ const userSchema = new mongoose.Schema({
         trim: true,
         default: ''
     },
+    deviceId: {
+        type: String,
+        trim: true,
+        default: null
+    },
     createdAt: {
         type: Date,
         default: Date.now

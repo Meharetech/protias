@@ -112,7 +112,7 @@ exports.verifyRegistrationOTP = async (req, res) => {
     const session = await mongoose.startSession();
 
     try {
-        const { fullName, email, phone, password, otp, referralCode } = req.body;
+        const { fullName, email, phone, password, otp, referralCode, deviceId } = req.body;
 
         // Validation
         if (!fullName || !email || !phone || !password || !otp) {
@@ -171,7 +171,8 @@ exports.verifyRegistrationOTP = async (req, res) => {
                 email,
                 phone,
                 password,
-                referredBy
+                referredBy,
+                deviceId
             }], { session });
 
             const newUser = users[0];
@@ -387,7 +388,7 @@ exports.register = async (req, res) => {
 // @access  Public
 exports.login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password, deviceId } = req.body;
 
         // Validation
         if (!email || !password) {
@@ -412,6 +413,19 @@ exports.login = async (req, res) => {
                 success: false,
                 message: 'Your account has been deactivated. Please contact support.'
             });
+        }
+
+        // DEVICE ID PROTECTION (Only for students)
+        if (user.role === 'student' && deviceId) {
+            if (!user.deviceId) {
+                // First time login on a device or after administrative reset
+                user.deviceId = deviceId;
+            } else if (user.deviceId !== deviceId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Multi-device login not allowed. This account is locked to another device. Please contact administration to reset your device access.'
+                });
+            }
         }
 
         // Check password
