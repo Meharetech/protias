@@ -3,6 +3,8 @@ const OTP = require('../models/OTP');
 const Wallet = require('../models/Wallet');
 const ReferralReward = require('../models/ReferralReward');
 const walletService = require('../services/walletService');
+const path = require('path');
+const fs = require('fs');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const { sendRegistrationOTP, sendPasswordResetOTP, sendWelcomeEmail } = require('../services/emailService');
@@ -416,14 +418,22 @@ exports.login = async (req, res) => {
         }
 
         // DEVICE ID PROTECTION (Only for students)
-        if (user.role === 'student' && deviceId) {
+        if (user.role === 'student') {
+            if (!deviceId) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Security Error: This application is for mobile devices only. Please use the official app to log in.'
+                });
+            }
+
             if (!user.deviceId) {
                 // First time login on a device or after administrative reset
+                // Capture and bind the new device ID
                 user.deviceId = deviceId;
             } else if (user.deviceId !== deviceId) {
                 return res.status(403).json({
                     success: false,
-                    message: 'Multi-device login not allowed. This account is locked to another device. Please contact administration to reset your device access.'
+                    message: 'Account Locked: Multi-device login is prohibited. This account is already bound to another hardware profile. Please contact Support/Administration to authorize a new device.'
                 });
             }
         }
