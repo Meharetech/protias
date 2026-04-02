@@ -46,8 +46,8 @@ app.use(cors({
     credentials: true
 }));
 // Standard payload size limit (Multipart handles large files)
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static files (uploaded course materials)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

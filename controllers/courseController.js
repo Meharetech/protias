@@ -1,12 +1,16 @@
 const Course = require('../models/Course');
 const PurchaseLog = require('../models/PurchaseLog');
+const Enrollment = require('../models/Enrollment');
+const Order = require('../models/Order');
+// CourseContent is optional — handled gracefully in deleteCourse
+const CourseContent = (() => { try { return require('../models/CourseContent'); } catch { return null; } })();
 
 // @desc    Get all courses (public - only active courses for non-admin)
 // @route   GET /api/courses
 // @access  Public (but admin can see all)
 exports.getAllCourses = async (req, res) => {
     try {
-        const { status, category, level, search, limit } = req.query;
+        const { status, category, level, courseType, search, limit } = req.query;
 
         // Build query
         let query = {};
@@ -27,6 +31,7 @@ exports.getAllCourses = async (req, res) => {
 
         if (category) query.category = category;
         if (level) query.level = level;
+        if (courseType) query.courseType = courseType;
         if (search) {
             query.$or = [
                 { courseName: { $regex: search, $options: 'i' } },
@@ -236,6 +241,13 @@ exports.deleteCourse = async (req, res) => {
                 message: 'Course not found'
             });
         }
+
+        // Cleanup orphaned related documents in parallel
+        await Promise.all([
+            Enrollment.deleteMany({ course: req.params.id }),
+            Order.updateMany({ courseId: req.params.id }, { $set: { courseId: null } }),
+            CourseContent ? CourseContent.deleteMany({ courseId: req.params.id }) : Promise.resolve()
+        ]);
 
         res.status(200).json({
             success: true,

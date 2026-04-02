@@ -9,11 +9,17 @@ const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const { sendRegistrationOTP, sendPasswordResetOTP, sendWelcomeEmail } = require('../services/emailService');
 
+
+// Ensure JWT_SECRET is set — fail fast on startup if missing
+if (!process.env.JWT_SECRET) {
+    throw new Error('FATAL: JWT_SECRET is not set in environment variables. Set it in your .env file.');
+}
+
 // Generate JWT Token
 const generateToken = (userId) => {
     return jwt.sign(
         { id: userId },
-        process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+        process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRE || '7d' }
     );
 };

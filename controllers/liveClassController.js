@@ -30,10 +30,10 @@ const upload = multer({
         const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
         const mimetype = filetypes.test(file.mimetype);
 
-        if (extname || mimetype) {
+        if (extname && mimetype) {  // Fixed: was || (allowed bad files); now && enforces BOTH
             return cb(null, true);
         }
-        cb(new Error('Only image files are allowed!'));
+        cb(new Error('Only image files (jpeg, jpg, png, webp) are allowed!'));
     },
 });
 
@@ -84,7 +84,7 @@ exports.createLiveClass = async (req, res) => {
     }
 };
 
-// Get all live classes (with status filtering)
+// Get all live classes (with status filtering) — Admin
 exports.getAllLiveClasses = async (req, res) => {
     try {
         const { status } = req.query;
@@ -98,10 +98,17 @@ exports.getAllLiveClasses = async (req, res) => {
             .populate('createdBy', 'name email')
             .sort({ scheduledTime: -1 });
 
-        // Update status for each class
-        for (let liveClass of liveClasses) {
+        // Only save classes whose status actually changed (parallel, not sequential)
+        const savePromises = [];
+        for (const liveClass of liveClasses) {
+            const oldStatus = liveClass.status;
             liveClass.updateStatus();
-            await liveClass.save();
+            if (liveClass.status !== oldStatus) {
+                savePromises.push(liveClass.save());
+            }
+        }
+        if (savePromises.length > 0) {
+            await Promise.all(savePromises);
         }
 
         res.status(200).json(liveClasses);
@@ -122,18 +129,19 @@ exports.getLiveClassById = async (req, res) => {
             return res.status(404).json({ message: 'Live class not found' });
         }
 
-        // Update status (moved here to ensure it's done before access checks)
+        // Update status
+        const oldStatus = liveClass.status;
         liveClass.updateStatus();
-        await liveClass.save();
+        if (liveClass.status !== oldStatus) {
+            await liveClass.save();
+        }
 
         // Access Control Logic
         if ((liveClass.classType === 'paid' || liveClass.courseId) && req.user) {
-            // Check if user is an admin (admin has access to everything)
             if (req.user.role === 'admin') {
                 return res.status(200).json(liveClass);
             }
 
-            // If it's linked to a course, check course enrollment
             if (liveClass.courseId) {
                 const enrollment = await Enrollment.findOne({
                     user: req.user.id,
@@ -141,7 +149,6 @@ exports.getLiveClassById = async (req, res) => {
                     isActive: true
                 });
 
-                // Also check for approved order in old system
                 const approvedOrder = await Order.findOne({
                     userId: req.user.id,
                     courseId: liveClass.courseId,
@@ -156,7 +163,6 @@ exports.getLiveClassById = async (req, res) => {
                     });
                 }
             } else if (liveClass.classType === 'paid') {
-                // Standalone paid class - check for approved order
                 const approvedOrder = await Order.findOne({
                     userId: req.user.id,
                     liveClassId: liveClass._id,
@@ -172,7 +178,6 @@ exports.getLiveClassById = async (req, res) => {
                 }
             }
         } else if ((liveClass.classType === 'paid' || liveClass.courseId) && !req.user) {
-            // Paid or course-linked class requires login
             return res.status(401).json({ message: 'Authentication required to access this live class' });
         }
 
@@ -274,26 +279,22 @@ exports.deleteLiveClass = async (req, res) => {
 // Get upcoming live classes for students
 exports.getUpcomingLiveClasses = async (req, res) => {
     try {
-        const now = new Date();
+        // Fetch only scheduled/live classes directly from DB (indexed query, no memory filter)
+        const liveClasses = await LiveClass.find({
+            status: { $in: ['scheduled', 'live'] }
+        }).sort({ scheduledTime: 1 }).limit(50);
 
-        console.log('Fetching all classes for student to debug...');
-        const allClasses = await LiveClass.find({});
-        console.log('Total classes in DB:', allClasses.length);
-
-        const liveClasses = allClasses.filter(c =>
-            c.status === 'scheduled' || c.status === 'live'
-        ).sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
-
-        console.log('Filtered classes (scheduled/live):', liveClasses.length);
-
-        // Update status for each filtered class
-        for (let liveClass of liveClasses) {
+        // Only save classes whose status actually changed
+        const savePromises = [];
+        for (const liveClass of liveClasses) {
             const oldStatus = liveClass.status;
             liveClass.updateStatus();
-            if (oldStatus !== liveClass.status) {
-                console.log(`Class ${liveClass._id} status updated from ${oldStatus} to ${liveClass.status}`);
-                await liveClass.save();
+            if (liveClass.status !== oldStatus) {
+                savePromises.push(liveClass.save());
             }
+        }
+        if (savePromises.length > 0) {
+            await Promise.all(savePromises);
         }
 
         res.status(200).json(liveClasses);

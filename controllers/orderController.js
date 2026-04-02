@@ -38,17 +38,20 @@ exports.createOrder = async (req, res) => {
             if (!purchasable) {
                 await session.abortTransaction();
                 session.endSession();
-                return res.status(404).json({
-                    success: false,
-                    message: 'Course not found'
-                });
+                return res.status(404).json({ success: false, message: 'Course not found' });
             }
             if (purchasable.status !== 'active') {
                 await session.abortTransaction();
                 session.endSession();
+                return res.status(400).json({ success: false, message: 'Course is not available for purchase' });
+            }
+            // H-01 Fix: Block order flow for free courses
+            if (purchasable.courseType === 'free') {
+                await session.abortTransaction();
+                session.endSession();
                 return res.status(400).json({
                     success: false,
-                    message: 'Course is not available for purchase'
+                    message: 'This course is free. Use /api/enrollments/enroll to join directly.'
                 });
             }
             originalAmount = purchasable.salePrice;
@@ -490,14 +493,12 @@ exports.updateOrderStatus = async (req, res) => {
         if (status === 'approved') {
             const userId = order.userId;
             
-            // 1. Check if user has a referral record
             const referralRecord = await ReferralReward.findOne({ 
                 referredId: userId,
                 purchaseRewardGiven: false 
             }).session(session);
 
             if (referralRecord) {
-                // Check if this is truly the first approved order for this user
                 const otherApprovedOrders = await Order.findOne({
                     userId,
                     status: 'approved',
@@ -505,9 +506,7 @@ exports.updateOrderStatus = async (req, res) => {
                 }).session(session);
 
                 if (!otherApprovedOrders) {
-                    // This is the first purchase! Award 200 Rs to referrer
                     const referrerId = referralRecord.referrerId;
-                    
                     await walletService.addTransaction({
                         userId: referrerId,
                         amount: 200,
@@ -517,15 +516,25 @@ exports.updateOrderStatus = async (req, res) => {
                         referenceId: order._id,
                         session
                     });
-
                     referralRecord.purchaseRewardGiven = true;
                     referralRecord.firstPurchaseId = order._id;
                     referralRecord.purchaseRewardAmount = 200;
                     await referralRecord.save({ session });
-                    
-                    console.log(`Awarded 200 Rs referral purchase reward to ${referrerId}`);
                 }
             }
+        }
+
+        // H-04 Fix: Refund wallet amount if order is rejected
+        if (status === 'rejected' && order.walletAmount > 0) {
+            await walletService.addTransaction({
+                userId: order.userId,
+                amount: order.walletAmount,
+                type: 'credit',
+                category: 'refund',
+                description: `Wallet refund for rejected order #${order._id}`,
+                referenceId: order._id,
+                session
+            });
         }
 
         // Commit all changes

@@ -1,5 +1,6 @@
 const Enrollment = require('../models/Enrollment');
 const Course = require('../models/Course');
+const Order = require('../models/Order');
 
 // @desc    Enroll in a course (Purchase)
 // @route   POST /api/enrollments/enroll
@@ -8,20 +9,22 @@ exports.enrollInCourse = async (req, res) => {
     try {
         const { courseId, paymentMethod, transactionId, amountPaid } = req.body;
 
-        // Validate input
-        if (!courseId || !amountPaid) {
-            return res.status(400).json({
-                success: false,
-                message: 'Course ID and amount paid are required'
-            });
-        }
-
         // Check if course exists
         const course = await Course.findById(courseId);
         if (!course) {
             return res.status(404).json({
                 success: false,
                 message: 'Course not found'
+            });
+        }
+
+        const isFree = course.courseType === 'free';
+
+        // Validate input
+        if (!courseId || (!isFree && !amountPaid)) {
+            return res.status(400).json({
+                success: false,
+                message: isFree ? 'Course ID is required' : 'Course ID and amount paid are required'
             });
         }
 
@@ -42,9 +45,9 @@ exports.enrollInCourse = async (req, res) => {
         const enrollment = await Enrollment.create({
             user: req.user.id,
             course: courseId,
-            amountPaid,
-            paymentMethod: paymentMethod || 'other',
-            transactionId,
+            amountPaid: isFree ? 0 : amountPaid,
+            paymentMethod: isFree ? 'other' : (paymentMethod || 'other'),
+            transactionId: isFree ? `FREE-${Date.now()}` : transactionId,
             paymentStatus: 'completed'
         });
 
@@ -68,22 +71,15 @@ exports.enrollInCourse = async (req, res) => {
 // @access  Private
 exports.getMyEnrollments = async (req, res) => {
     try {
-        // Get enrollments from new system
-        const enrollments = await Enrollment.find({
-            user: req.user.id,
-            isActive: true
-        })
-            .populate('course')
-            .sort({ enrollmentDate: -1 });
-
         // Also get approved orders from old system for backward compatibility
-        const Order = require('../models/Order');
-        const approvedOrders = await Order.find({
-            userId: req.user.id,  // Fixed: Order model uses userId
-            status: 'approved'
-        })
-            .populate('courseId')  // Fixed: Order model uses courseId
-            .sort({ createdAt: -1 });
+        const [enrollments, approvedOrders] = await Promise.all([
+            Enrollment.find({ user: req.user.id, isActive: true })
+                .populate('course')
+                .sort({ enrollmentDate: -1 }),
+            Order.find({ userId: req.user.id, status: 'approved' })
+                .populate('courseId')
+                .sort({ createdAt: -1 })
+        ]);
 
         // Convert orders to enrollment format
         const orderEnrollments = approvedOrders
@@ -145,82 +141,40 @@ exports.checkEnrollment = async (req, res) => {
     try {
         const { courseId } = req.params;
 
-        console.log('=== ENROLLMENT CHECK DEBUG ===');
-        console.log('User ID:', req.user.id);
-        console.log('Course ID:', courseId);
-
-        // Check new enrollment system
-        const enrollment = await Enrollment.findOne({
-            user: req.user.id,
-            course: courseId,
-            isActive: true
-        });
-
-        console.log('Enrollment found:', !!enrollment);
+        // Run both checks in parallel
+        const [enrollment, approvedOrder] = await Promise.all([
+            Enrollment.findOne({ user: req.user.id, course: courseId, isActive: true }),
+            Order.findOne({ userId: req.user.id, courseId, status: 'approved' }).populate('courseId')
+        ]);
 
         if (enrollment) {
-            console.log('Returning enrollment from Enrollment collection');
             return res.status(200).json({
                 success: true,
-                data: {
-                    isEnrolled: true,
-                    enrollment
-                }
-            });
-        }
-
-        // Check old order system for backward compatibility
-        const Order = require('../models/Order');
-
-        console.log('Checking Order collection...');
-        const approvedOrder = await Order.findOne({
-            userId: req.user.id,      // Fixed: Order model uses userId
-            courseId: courseId,       // Fixed: Order model uses courseId
-            status: 'approved'
-        }).populate('courseId');      // Populate the course data
-
-        console.log('Approved order found:', !!approvedOrder);
-        if (approvedOrder) {
-            console.log('Order details:', {
-                orderId: approvedOrder._id,
-                userId: approvedOrder.userId,
-                courseId: approvedOrder.courseId?._id,
-                status: approvedOrder.status
+                data: { isEnrolled: true, enrollment }
             });
         }
 
         if (approvedOrder) {
-            // Create a pseudo-enrollment object from order
             const pseudoEnrollment = {
                 _id: approvedOrder._id,
                 user: approvedOrder.userId,
-                course: approvedOrder.courseId,  // Use populated courseId
+                course: approvedOrder.courseId,
                 enrollmentDate: approvedOrder.createdAt,
                 paymentStatus: 'completed',
-                amountPaid: approvedOrder.finalAmount,  // Fixed: Order model uses finalAmount
+                amountPaid: approvedOrder.finalAmount,
                 completedVideos: [],
                 progress: 0,
                 isFromOrder: true
             };
-
-            console.log('Returning pseudo-enrollment from Order');
             return res.status(200).json({
                 success: true,
-                data: {
-                    isEnrolled: true,
-                    enrollment: pseudoEnrollment
-                }
+                data: { isEnrolled: true, enrollment: pseudoEnrollment }
             });
         }
 
-        // Not enrolled
-        console.log('No enrollment or order found - user not enrolled');
         res.status(200).json({
             success: true,
-            data: {
-                isEnrolled: false,
-                enrollment: null
-            }
+            data: { isEnrolled: false, enrollment: null }
         });
     } catch (error) {
         console.error('Check enrollment error:', error);
@@ -318,7 +272,6 @@ exports.getUserEnrollmentsForAdmin = async (req, res) => {
         }).populate('course');
 
         // Get orders from old system
-        const Order = require('../models/Order');
         const orders = await Order.find({
             userId: userId,
             status: 'approved'

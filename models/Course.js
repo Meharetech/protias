@@ -52,6 +52,11 @@ const courseSchema = new mongoose.Schema({
         trim: true,
         default: 'Expert Faculty'
     },
+    courseType: {
+        type: String,
+        enum: ['free', 'paid'],
+        default: 'paid'
+    },
     videoLink: {
         type: String,
         trim: true,
