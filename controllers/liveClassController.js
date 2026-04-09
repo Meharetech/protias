@@ -24,16 +24,22 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    limits: { fileSize: 19 * 1024 * 1024 }, // 5MB limit
     fileFilter: function (req, file, cb) {
-        const filetypes = /jpeg|jpg|png|webp/;
-        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = filetypes.test(file.mimetype);
+        const allowedMimeTypes = [
+            'image/jpeg', 'image/png', 'image/webp', 'image/jpg',
+            'image/heic', 'image/heif'
+        ];
 
-        if (extname && mimetype) {  // Fixed: was || (allowed bad files); now && enforces BOTH
-            return cb(null, true);
+        const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
+        const fileExtension = path.extname(file.originalname).toLowerCase();
+
+        if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
+            cb(null, true);
+        } else {
+            console.error(`Rejected live class thumbnail: ${file.originalname}, MIME: ${file.mimetype}, Ext: ${fileExtension}`);
+            cb(new Error('Only image files (jpeg, jpg, png, webp, heic) are allowed!'), false);
         }
-        cb(new Error('Only image files (jpeg, jpg, png, webp) are allowed!'));
     },
 });
 
