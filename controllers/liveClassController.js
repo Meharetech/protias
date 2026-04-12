@@ -1,4 +1,5 @@
 const LiveClass = require('../models/LiveClass');
+const Course = require('../models/Course');
 const Enrollment = require('../models/Enrollment');
 const Order = require('../models/Order');
 const multer = require('multer');
@@ -70,8 +71,8 @@ exports.createLiveClass = async (req, res) => {
             youtubeUrl,
             scheduledTime,
             endTime: endTime || null,
-            classType: classType || 'free',
-            price: price || 0,
+            classType: 'free', // Decommissioned pricing logic
+            price: 0,         // Decommissioned pricing logic
             courseId: courseId || null,
             recurrence: recurrence || 'none',
             thumbnail: req.file ? `/uploads/live-classes/${req.file.filename}` : '',
@@ -104,19 +105,6 @@ exports.getAllLiveClasses = async (req, res) => {
             .populate('createdBy', 'name email')
             .sort({ scheduledTime: -1 });
 
-        // Only save classes whose status actually changed (parallel, not sequential)
-        const savePromises = [];
-        for (const liveClass of liveClasses) {
-            const oldStatus = liveClass.status;
-            liveClass.updateStatus();
-            if (liveClass.status !== oldStatus) {
-                savePromises.push(liveClass.save());
-            }
-        }
-        if (savePromises.length > 0) {
-            await Promise.all(savePromises);
-        }
-
         res.status(200).json(liveClasses);
     } catch (error) {
         console.error('Error fetching live classes:', error);
@@ -129,7 +117,7 @@ exports.getAllLiveClasses = async (req, res) => {
 // @access  Public (free) / Private (paid/course-linked)
 exports.getLiveClassById = async (req, res) => {
     try {
-        const liveClass = await LiveClass.findById(req.params.id).populate('courseId', 'courseName');
+        const liveClass = await LiveClass.findById(req.params.id).populate('courseId', 'courseName category');
 
         if (!liveClass) {
             return res.status(404).json({ message: 'Live class not found' });
@@ -142,48 +130,50 @@ exports.getLiveClassById = async (req, res) => {
             await liveClass.save();
         }
 
-        // Access Control Logic
-        if ((liveClass.classType === 'paid' || liveClass.courseId) && req.user) {
+        // Access Control Logic - Strict Course Enrollment
+        if (liveClass.courseId && req.user) {
+            // Admins have bypass
             if (req.user.role === 'admin') {
                 return res.status(200).json(liveClass);
             }
 
-            if (liveClass.courseId) {
-                const enrollment = await Enrollment.findOne({
-                    user: req.user.id,
-                    course: liveClass.courseId,
-                    isActive: true
-                });
+            // Extract the course ID safely (handles both populated and raw ID)
+            const targetCourseId = liveClass.courseId._id || liveClass.courseId;
+            const currentUserId = req.user._id || req.user.id;
 
-                const approvedOrder = await Order.findOne({
-                    userId: req.user.id,
-                    courseId: liveClass.courseId,
-                    status: 'approved'
-                });
+            // Check if user has active enrollment in the SPECIFIC course
+            const enrollment = await Enrollment.findOne({
+                user: currentUserId,
+                course: targetCourseId,
+                isActive: true
+            });
 
-                if (!enrollment && !approvedOrder) {
-                    return res.status(403).json({
-                        message: 'Access denied. You must be enrolled in the associated course to view this live class.',
-                        requiresEnrollment: true,
-                        courseId: liveClass.courseId._id
-                    });
-                }
-            } else if (liveClass.classType === 'paid') {
-                const approvedOrder = await Order.findOne({
-                    userId: req.user.id,
-                    liveClassId: liveClass._id,
-                    status: 'approved'
-                });
+            // FALLBACK: Also check the direct Order model
+            const approvedOrder = await Order.findOne({
+                userId: currentUserId,
+                courseId: targetCourseId,
+                status: 'approved'
+            });
 
-                if (!approvedOrder) {
-                    return res.status(403).json({
-                        message: 'Access denied. You must purchase this live class to join.',
-                        requiresPurchase: true,
-                        price: liveClass.price
-                    });
-                }
+            if (!enrollment && !approvedOrder) {
+                return res.status(403).json({
+                    message: 'Access denied. You must be enrolled in the associated course to view this live class.',
+                    requiresEnrollment: true,
+                    courseId: targetCourseId,
+                    courseName: liveClass.courseId.courseName || 'this course'
+                });
             }
-        } else if ((liveClass.classType === 'paid' || liveClass.courseId) && !req.user) {
+            
+            // If they are enrolled, they get the full object
+            return res.status(200).json(liveClass);
+        } 
+        // Public classes (no courseId) or Admin bypass
+        else if (!liveClass.courseId && req.user) {
+            // Non-course-linked classes are public for logged-in users
+            return res.status(200).json(liveClass);
+        }
+        // Guest user access
+        else if (liveClass.courseId && !req.user) {
             return res.status(401).json({ message: 'Authentication required to access this live class' });
         }
 
@@ -223,13 +213,15 @@ exports.updateLiveClass = async (req, res) => {
         if (youtubeUrl) liveClass.youtubeUrl = youtubeUrl;
         if (scheduledTime) liveClass.scheduledTime = scheduledTime;
         if (req.body.endTime !== undefined) liveClass.endTime = req.body.endTime || null;
-        if (classType) liveClass.classType = classType;
-        if (price !== undefined) liveClass.price = price;
         if (req.body.courseId !== undefined) liveClass.courseId = req.body.courseId || null;
         if (recurrence) liveClass.recurrence = recurrence;
         if (req.file) {
             liveClass.thumbnail = `/uploads/live-classes/${req.file.filename}`;
         }
+
+        // Force free/price 0 as standalone payments are removed
+        liveClass.classType = 'free';
+        liveClass.price = 0;
 
         await liveClass.save();
 
@@ -282,30 +274,52 @@ exports.deleteLiveClass = async (req, res) => {
     }
 };
 
-// Get upcoming live classes for students
+// Get upcoming live classes for students (Identity-aware filtering)
 exports.getUpcomingLiveClasses = async (req, res) => {
     try {
-        // Fetch only scheduled/live classes directly from DB (indexed query, no memory filter)
-        const liveClasses = await LiveClass.find({
+        const filter = {
             status: { $in: ['scheduled', 'live'] }
-        }).sort({ scheduledTime: 1 }).limit(50);
+        };
 
-        // Only save classes whose status actually changed
-        const savePromises = [];
-        for (const liveClass of liveClasses) {
-            const oldStatus = liveClass.status;
-            liveClass.updateStatus();
-            if (liveClass.status !== oldStatus) {
-                savePromises.push(liveClass.save());
+        // Identity-Based Visibility Control
+        if (req.user) {
+            // Admins maintain global visibility for monitoring
+            if (req.user.role !== 'admin') {
+                // Resolve all authorized content sources for the student
+                const [enrollments, approvedOrders] = await Promise.all([
+                    Enrollment.find({ user: req.user._id, isActive: true }).select('course'),
+                    Order.find({ userId: req.user._id, status: 'approved' }).select('courseId')
+                ]);
+
+                // Flatten and extract normalized ID strings from all sources
+                const enrolledIds = enrollments.map(e => e.course.toString());
+                const orderedIds = approvedOrders
+                    .map(o => o.courseId ? o.courseId.toString() : null)
+                    .filter(id => id !== null);
+                
+                // Unified set of authorized course ID strings
+                const authorizedCourseIds = [...new Set([...enrolledIds, ...orderedIds])];
+
+                // Filter live classes: Include Standalone (null) OR Authorized courses
+                filter.$or = [
+                    { courseId: null },
+                    { courseId: { $in: authorizedCourseIds } }
+                ];
             }
+        } else {
+            // Non-logged in guests only see Standalone public broadcasts
+            filter.courseId = null;
         }
-        if (savePromises.length > 0) {
-            await Promise.all(savePromises);
-        }
+
+        // Optimized query with projection for high-density listing
+        const liveClasses = await LiveClass.find(filter)
+            .populate('courseId', 'courseName')
+            .sort({ scheduledTime: 1 })
+            .limit(50);
 
         res.status(200).json(liveClasses);
     } catch (error) {
-        console.error('Error fetching upcoming live classes:', error);
+        console.error('Error fetching student live feed:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };

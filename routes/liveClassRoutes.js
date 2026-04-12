@@ -17,8 +17,8 @@ const {
 } = require('../controllers/liveClassCommentController');
 const { protect, authorize, optionalAuth } = require('../middleware/auth');
 
-// Public routes (for students)
-router.get('/upcoming', getUpcomingLiveClasses);
+// Public/Student routes
+router.get('/upcoming', optionalAuth, getUpcomingLiveClasses);
 router.get('/:id', optionalAuth, getLiveClassById);
 
 // Comment routes (protected)

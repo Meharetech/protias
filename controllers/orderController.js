@@ -1,4 +1,5 @@
 const Order = require('../models/Order');
+const Enrollment = require('../models/Enrollment');
 const Course = require('../models/Course');
 const LiveClass = require('../models/LiveClass');
 const Coupon = require('../models/Coupon');
@@ -44,15 +45,6 @@ exports.createOrder = async (req, res) => {
                 await session.abortTransaction();
                 session.endSession();
                 return res.status(400).json({ success: false, message: 'Course is not available for purchase' });
-            }
-            // H-01 Fix: Block order flow for free courses
-            if (purchasable.courseType === 'free') {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(400).json({
-                    success: false,
-                    message: 'This course is free. Use /api/enrollments/enroll to join directly.'
-                });
             }
             originalAmount = purchasable.salePrice;
             purchasableType = 'course';
@@ -761,6 +753,23 @@ exports.checkCourseOrderStatus = async (req, res) => {
     try {
         const { courseId } = req.params;
 
+        // Check for active enrollment first
+        const enrollment = await Enrollment.findOne({
+            user: req.user._id,
+            course: courseId,
+            isActive: true
+        });
+
+        if (enrollment) {
+            return res.status(200).json({
+                success: true,
+                canPurchase: false,
+                already_enrolled: true,
+                reason: 'already_purchased',
+                message: 'You are already enrolled in this course'
+            });
+        }
+
         // Check for approved order
         const approvedOrder = await Order.findOne({
             userId: req.user._id,
@@ -834,6 +843,23 @@ exports.checkCourseOrderStatus = async (req, res) => {
 exports.checkLiveClassOrderStatus = async (req, res) => {
     try {
         const { liveClassId } = req.params;
+
+        // Check for active enrollment first
+        const enrollment = await Enrollment.findOne({
+            user: req.user._id,
+            liveClassId: liveClassId,
+            isActive: true
+        });
+
+        if (enrollment) {
+            return res.status(200).json({
+                success: true,
+                canPurchase: false,
+                already_enrolled: true,
+                reason: 'already_purchased',
+                message: 'You are already enrolled in this live class'
+            });
+        }
 
         // Check for approved order
         const approvedOrder = await Order.findOne({
