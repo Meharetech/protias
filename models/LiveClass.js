@@ -64,6 +64,20 @@ const liveClassSchema = new mongoose.Schema(
         endedAt: {
             type: Date,
         },
+        reminders: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }],
+        // Stage 1: Notified at ~30 minutes before class
+        notifiedAt30min: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }],
+        // Stage 2: Notified at ~10 minutes before class
+        notifiedAt10min: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }],
     },
     {
         timestamps: true,

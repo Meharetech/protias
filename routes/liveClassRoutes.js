@@ -8,6 +8,8 @@ const {
     forceEndLiveClass,
     deleteLiveClass,
     getUpcomingLiveClasses,
+    toggleReminder,
+    testNotification,
     upload,
 } = require('../controllers/liveClassController');
 const {
@@ -20,6 +22,7 @@ const { protect, authorize, optionalAuth } = require('../middleware/auth');
 // Public/Student routes
 router.get('/upcoming', optionalAuth, getUpcomingLiveClasses);
 router.get('/:id', optionalAuth, getLiveClassById);
+router.post('/:id/toggle-reminder', protect, toggleReminder);
 
 // Comment routes (protected)
 router.get('/:liveClassId/comments', getComments);
@@ -31,6 +34,7 @@ router.post('/', protect, authorize('admin'), upload.single('thumbnail'), create
 router.get('/', protect, authorize('admin'), getAllLiveClasses);
 router.put('/:id', protect, authorize('admin'), upload.single('thumbnail'), updateLiveClass);
 router.put('/:id/force-end', protect, authorize('admin'), forceEndLiveClass);
+router.post('/:id/test-notification', protect, authorize('admin'), testNotification);
 router.delete('/:id', protect, authorize('admin'), deleteLiveClass);
 
 module.exports = router;

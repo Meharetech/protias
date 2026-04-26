@@ -324,4 +324,123 @@ exports.getUpcomingLiveClasses = async (req, res) => {
     }
 };
 
+// Toggle reminder for a live class
+exports.toggleReminder = async (req, res) => {
+    try {
+        const liveClass = await LiveClass.findById(req.params.id);
+
+        if (!liveClass) {
+            return res.status(404).json({ message: 'Live class not found' });
+        }
+
+        const userId = req.user.id; // This is a string
+
+        // BUG FIX: MongoDB reminders array stores ObjectIds, not strings.
+        // Using .indexOf() or .includes() directly compares references, always returning -1.
+        // Convert each ObjectId to a string for reliable comparison.
+        const index = liveClass.reminders.findIndex(
+            id => id.toString() === userId
+        );
+
+        let isSet = false;
+        if (index === -1) {
+            // Add reminder
+            liveClass.reminders.push(userId);
+            isSet = true;
+        } else {
+            // Remove reminder
+            liveClass.reminders.splice(index, 1);
+            isSet = false;
+        }
+
+        await liveClass.save();
+
+        res.status(200).json({
+            success: true,
+            message: isSet ? 'Reminder set successfully' : 'Reminder removed',
+            isReminderSet: isSet
+        });
+    } catch (error) {
+        console.error('Error toggling reminder:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+// Test notification delivery (Admin only) — sends both reminder stages immediately
+exports.testNotification = async (req, res) => {
+    try {
+        const User = require('../models/User');
+        const { sendNotificationToUser } = require('../services/notificationService');
+
+        const liveClass = await LiveClass.findById(req.params.id);
+        if (!liveClass) {
+            return res.status(404).json({ message: 'Live class not found' });
+        }
+
+        if (liveClass.reminders.length === 0) {
+            return res.status(200).json({ 
+                success: false, 
+                message: 'No users have set reminders for this class yet.' 
+            });
+        }
+
+        const users = await User.find({
+            _id: { $in: liveClass.reminders },
+            fcmToken: { $exists: true, $ne: null, $ne: '' }
+        });
+
+        if (users.length === 0) {
+            return res.status(200).json({ 
+                success: false, 
+                message: `Found ${liveClass.reminders.length} reminder(s), but none of those users have a registered FCM token. Make sure the app is open and logged in on their device first.` 
+            });
+        }
+
+        // Send both notification stages back-to-back for testing
+        const stages = [
+            {
+                title: '⏰ [TEST] Class in 30 Minutes!',
+                body: `"${liveClass.title}" – This is the 30-minute reminder.`
+            },
+            {
+                title: '🔴 [TEST] Starting in 10 Minutes!',
+                body: `"${liveClass.title}" – This is the 10-minute reminder.`
+            }
+        ];
+
+        let successCount = 0;
+        let failureCount = 0;
+
+        for (const user of users) {
+            for (const stage of stages) {
+                const result = await sendNotificationToUser(
+                    user.fcmToken,
+                    stage.title,
+                    stage.body,
+                    {
+                        type: 'live_class_test',
+                        liveClassId: liveClass._id.toString()
+                    }
+                );
+                if (result.success) {
+                    successCount++;
+                } else {
+                    failureCount++;
+                    console.error(`[Test] Failed for ${user._id}:`, result.message);
+                }
+            }
+        }
+
+        res.status(200).json({
+            success: successCount > 0,
+            message: `Test: Sent ${successCount} notifications (2 per user × ${users.length} users), ${failureCount} failed.`,
+            totalReminders: liveClass.reminders.length,
+            usersWithTokens: users.length
+        });
+    } catch (error) {
+        console.error('Error sending test notification:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
 module.exports.upload = upload;

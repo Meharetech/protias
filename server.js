@@ -11,10 +11,14 @@ dotenv.config();
 connectDB();
 
 const { initializeFirebase } = require('./services/notificationService');
+const { startReminderScheduler } = require('./services/reminderScheduler');
 const fs = require('fs');
 
 // Initialize Firebase for push notifications
 initializeFirebase();
+
+// Start background task scheduler for live class reminders
+startReminderScheduler();
 
 // Ensure upload directories exist
 const uploadDirs = [

@@ -62,6 +62,22 @@ const courseSchema = new mongoose.Schema({
         trim: true,
         default: ''
     },
+    rating: {
+        type: Number,
+        min: [1, 'Rating must be at least 1'],
+        max: [5, 'Rating must not exceed 5'],
+        default: 4.5
+    },
+    enrolledStudents: {
+        type: Number,
+        default: 0,
+        min: [0, 'Enrollment count cannot be negative']
+    },
+    badge: {
+        type: String,
+        enum: ['none', 'popular', 'best seller', 'new'],
+        default: 'none'
+    },
     // Tutorial Videos (Google Drive Links) - Optional
     tutorialVideos: [{
         title: {
