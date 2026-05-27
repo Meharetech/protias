@@ -371,8 +371,124 @@ const sendWelcomeEmail = async (email, fullName) => {
     }
 };
 
+// Send OTP email for account deletion
+const sendDeleteAccountOTP = async (email, otp, fullName) => {
+    try {
+        const transporter = createTransporter();
+
+        const mailOptions = {
+            from: `"PROUT IAS" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: 'Delete Account Request - PROUT IAS',
+            html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        body {
+                            font-family: 'Arial', sans-serif;
+                            line-height: 1.6;
+                            color: #333;
+                            max-width: 600px;
+                            margin: 0 auto;
+                            padding: 20px;
+                        }
+                        .container {
+                            background: linear-gradient(135deg, #f857a6 0%, #ff5858 100%);
+                            padding: 40px;
+                            border-radius: 10px;
+                            color: white;
+                        }
+                        .content {
+                            background: white;
+                            padding: 30px;
+                            border-radius: 8px;
+                            margin-top: 20px;
+                            color: #333;
+                        }
+                        .otp-box {
+                            background: #fff5f5;
+                            border: 2px dashed #ff5858;
+                            padding: 20px;
+                            text-align: center;
+                            border-radius: 8px;
+                            margin: 20px 0;
+                        }
+                        .otp-code {
+                            font-size: 32px;
+                            font-weight: bold;
+                            color: #ff5858;
+                            letter-spacing: 5px;
+                        }
+                        .footer {
+                            text-align: center;
+                            margin-top: 20px;
+                            font-size: 12px;
+                            color: rgba(255,255,255,0.8);
+                        }
+                        .warning {
+                            background: #f8d7da;
+                            border-left: 4px solid #ff5858;
+                            padding: 12px;
+                            margin: 15px 0;
+                            border-radius: 4px;
+                            color: #721c24;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1 style="margin: 0; font-size: 28px;">⚠️ Delete Account Request</h1>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">PROUT IAS Account Security</p>
+                        
+                        <div class="content">
+                            <h2 style="color: #ff5858; margin-top: 0;">Confirm Account Deletion</h2>
+                            <p>Hello <strong>${fullName}</strong>,</p>
+                            <p>We received a request to permanently delete your PROUT IAS account. This action is irreversible and will delete all your profile data, course enrollments, purchase logs, wallet balance, and order history.</p>
+                            <p>Use the OTP below to confirm and complete account deletion:</p>
+                            
+                            <div class="otp-box">
+                                <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your Deletion OTP</p>
+                                <div class="otp-code">${otp}</div>
+                                <p style="margin: 10px 0 0 0; font-size: 12px; color: #666;">Valid for 10 minutes</p>
+                            </div>
+                            
+                            <div class="warning">
+                                <strong>⚠️ Warning:</strong> Once deleted, you will lose access to all purchased courses and your wallet balance. This cannot be undone.
+                            </div>
+                            
+                            <p style="margin-top: 20px; font-size: 14px;">
+                                If you did not request this deletion, please secure your account immediately.
+                            </p>
+                            
+                            <p style="margin-top: 30px; color: #666; font-size: 14px;">
+                                Best regards,<br>
+                                <strong>Team PROUT IAS</strong>
+                            </p>
+                        </div>
+                        
+                        <div class="footer">
+                            <p>© ${new Date().getFullYear()} PROUT IAS. All rights reserved.</p>
+                            <p>This is an automated email. Please do not reply.</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('✅ Delete account OTP email sent:', info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('❌ Error sending delete account OTP email:', error);
+        throw new Error('Failed to send OTP email');
+    }
+};
+
 module.exports = {
     sendRegistrationOTP,
     sendPasswordResetOTP,
-    sendWelcomeEmail
+    sendWelcomeEmail,
+    sendDeleteAccountOTP
 };

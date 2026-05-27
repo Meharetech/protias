@@ -2,12 +2,15 @@ const User = require('../models/User');
 const OTP = require('../models/OTP');
 const Wallet = require('../models/Wallet');
 const ReferralReward = require('../models/ReferralReward');
+const Enrollment = require('../models/Enrollment');
+const Order = require('../models/Order');
+const LiveClassComment = require('../models/LiveClassComment');
 const walletService = require('../services/walletService');
 const path = require('path');
 const fs = require('fs');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
-const { sendRegistrationOTP, sendPasswordResetOTP, sendWelcomeEmail } = require('../services/emailService');
+const { sendRegistrationOTP, sendPasswordResetOTP, sendWelcomeEmail, sendDeleteAccountOTP } = require('../services/emailService');
 
 
 // Ensure JWT_SECRET is set — fail fast on startup if missing
@@ -858,5 +861,156 @@ exports.logout = async (req, res) => {
             success: false,
             message: 'Server error during logout'
         });
+    }
+};
+
+// @desc    Send OTP for account deletion
+// @route   POST /api/auth/send-delete-otp
+// @access  Public
+exports.sendDeleteAccountOTP = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide your email address'
+            });
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'No account found with this email address'
+            });
+        }
+
+        // Delete any existing delete-account OTPs for this email
+        await OTP.deleteMany({ email, type: 'delete-account' });
+
+        // Generate OTP
+        const otp = OTP.generateOTP();
+
+        // Save OTP to database
+        await OTP.create({
+            email,
+            otp,
+            type: 'delete-account'
+        });
+
+        // Send OTP email
+        await sendDeleteAccountOTP(email, otp, user.fullName);
+
+        res.status(200).json({
+            success: true,
+            message: 'Account deletion OTP sent successfully to your email',
+            data: {
+                email,
+                expiresIn: '10 minutes'
+            }
+        });
+    } catch (error) {
+        console.error('Send delete account OTP error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send OTP. Please try again.'
+        });
+    }
+};
+
+// @desc    Verify OTP and delete account
+// @route   POST /api/auth/delete-account
+// @access  Public
+exports.deleteAccount = async (req, res) => {
+    const session = await mongoose.startSession();
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide email and OTP'
+            });
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Find OTP record
+        const otpRecord = await OTP.findOne({
+            email,
+            type: 'delete-account',
+            verified: false
+        }).sort({ createdAt: -1 });
+
+        if (!otpRecord) {
+            return res.status(400).json({
+                success: false,
+                message: 'OTP expired or invalid. Please request a new one.'
+            });
+        }
+
+        // Check if OTP is expired
+        if (otpRecord.expiresAt < new Date()) {
+            await OTP.deleteOne({ _id: otpRecord._id });
+            return res.status(400).json({
+                success: false,
+                message: 'OTP has expired. Please request a new one.'
+            });
+        }
+
+        // Verify OTP
+        const isOTPValid = otpRecord.verifyOTP(otp);
+        if (!isOTPValid) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid OTP. Please try again.'
+            });
+        }
+
+        // Run deletion inside a transaction
+        await session.withTransaction(async () => {
+            const userId = user._id;
+
+            // Delete wallet
+            await Wallet.deleteOne({ userId }).session(session);
+
+            // Delete enrollments
+            await Enrollment.deleteMany({ user: userId }).session(session);
+
+            // Delete orders
+            await Order.deleteMany({ userId }).session(session);
+
+            // Delete referral rewards
+            await ReferralReward.deleteMany({ $or: [{ referrerId: userId }, { referredId: userId }] }).session(session);
+
+            // Delete live class comments
+            await LiveClassComment.deleteMany({ userId }).session(session);
+
+            // Delete OTPs for this email
+            await OTP.deleteMany({ email }).session(session);
+
+            // Delete user
+            await User.deleteOne({ _id: userId }).session(session);
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Your account and all associated data have been permanently deleted.'
+        });
+    } catch (error) {
+        console.error('Delete account error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error during account deletion. Please try again.'
+        });
+    } finally {
+        session.endSession();
     }
 };

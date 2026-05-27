@@ -12,7 +12,9 @@ const {
     verifyResetOTP,
     resetPassword,
     updateDeviceInfo,
-    updateProfilePic
+    updateProfilePic,
+    sendDeleteAccountOTP,
+    deleteAccount
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const upload = require('../middleware/fileUpload');
@@ -31,6 +33,10 @@ router.post('/login', login);
 router.post('/forgot-password', forgotPassword);
 router.post('/verify-reset-otp', verifyResetOTP);
 router.post('/reset-password', resetPassword);
+
+// Public routes - Account Deletion
+router.post('/send-delete-otp', sendDeleteAccountOTP);
+router.post('/delete-account', deleteAccount);
 
 // Protected routes
 router.get('/me', protect, getMe);

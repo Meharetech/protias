@@ -76,6 +76,19 @@ app.use((req, res, next) => {
 });
 
 // Routes
+const { getDeleteAccountHTML } = require('./utils/deleteAccountHtml');
+const { sendDeleteAccountOTP, deleteAccount } = require('./controllers/authController');
+
+// Account Deletion Web Interfaces and APIs
+app.get('/delete-account', (req, res) => {
+    res.send(getDeleteAccountHTML());
+});
+app.get('/api/delete-account', (req, res) => {
+    res.send(getDeleteAccountHTML());
+});
+app.post('/api/delete-account/send-otp', sendDeleteAccountOTP);
+app.post('/api/delete-account', deleteAccount);
+
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/courses', require('./routes/courseRoutes'));
